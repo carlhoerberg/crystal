@@ -52,6 +52,7 @@ lib LibEvent2
   fun event_free(event : Event)
   fun event_add(event : Event, timeout : LibC::Timeval*) : Int
   fun event_del(event : Event) : Int
+  fun event_active(event : Event, res : Int, ncalls : LibC::Short)
 
   type DnsBase = Void*
   type DnsGetAddrinfoRequest = Void*

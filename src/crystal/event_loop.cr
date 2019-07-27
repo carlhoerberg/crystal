@@ -22,6 +22,25 @@ module Crystal::EventLoop
     end
   end
 
+  def self.create_channel_event(channel)
+    @@eb.new_event(-1, LibEvent2::EventFlags::None, channel) do |s, flags, data|
+      timeout = flags.includes?(LibEvent2::EventFlags::Timeout)
+      if flags.includes?(LibEvent2::EventFlags::Read)
+        data.as(Channel).resume_receive(timed_out: timeout)
+      end
+      if flags.includes?(LibEvent2::EventFlags::Write)
+        data.as(Channel).resume_send(timed_out: timeout)
+      end
+    end
+  end
+
+  def self.create_channel_receive_event(channel)
+    @@eb.new_event(-1, LibEvent2::EventFlags::None, channel) do |s, flags, data|
+      timeout = flags.includes?(LibEvent2::EventFlags::Timeout)
+      data.as(Channel).resume_receive(timed_out: timeout)
+    end
+  end
+
   def self.create_fd_write_event(io : IO::Evented, edge_triggered : Bool = false)
     flags = LibEvent2::EventFlags::Write
     flags |= LibEvent2::EventFlags::Persist | LibEvent2::EventFlags::ET if edge_triggered

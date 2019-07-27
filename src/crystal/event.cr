@@ -28,9 +28,17 @@ struct Crystal::Event
     )
   end
 
+  def delete
+    LibEvent2.event_delete(@event)
+  end
+
   def free
     LibEvent2.event_free(@event) unless @freed
     @freed = true
+  end
+
+  def active(flags)
+    LibEvent2.event_active(@event, flags, 0)
   end
 
   # :nodoc:

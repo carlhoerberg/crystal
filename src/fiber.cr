@@ -124,6 +124,11 @@ class Fiber
     @resume_event ||= Crystal::EventLoop.create_resume_event(self)
   end
 
+  # :nodoc:
+  def timeout_event
+    @resume_event ||= Crystal::EventLoop.create_timeout_event(self)
+  end
+
   def self.yield
     Crystal::Scheduler.yield
   end

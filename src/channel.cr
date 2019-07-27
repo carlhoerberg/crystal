@@ -29,8 +29,18 @@ abstract class Channel(T)
     end
   end
 
+  class TimeoutError < Exception
+    def initialize(msg = "Channel operation timed out")
+      super(msg)
+    end
+  end
+
+  @resume_event : Crystal::Event?
+
   def initialize
     @closed = false
+    @send_timeout = false
+    @receive_timeout = false
     @senders = Deque(Fiber).new
     @receivers = Deque(Fiber).new
   end
@@ -49,11 +59,17 @@ abstract class Channel(T)
     @senders.clear
     Crystal::Scheduler.enqueue @receivers
     @receivers.clear
+    @resume_event.try &.free
+    @resume_event = nil
     nil
   end
 
   def closed?
     @closed
+  end
+
+  protected def resume_event
+    @resume_event ||= Crystal::EventLoop.create_channel_event(self)
   end
 
   # Receives a value from the channel.
@@ -104,6 +120,13 @@ abstract class Channel(T)
 
   protected def raise_if_closed
     raise ClosedError.new if @closed
+  end
+
+  protected def raise_if_timeout
+    if @timedout
+      @timedout = false
+      raise TimeoutError.new
+    end
   end
 
   def self.receive_first(*channels)
@@ -213,9 +236,11 @@ class Channel::Buffered(T) < Channel(T)
   end
 
   # Send a value to the channel.
-  def send(value : T)
+  def send(value : T, timeout : Time::Span? = nil)
+    add_timeout_event(timeout) if timeout && full?
     while full?
       raise_if_closed
+      raise_if_timeout
       @senders << Fiber.current
       Crystal::Scheduler.reschedule
     end
@@ -223,23 +248,31 @@ class Channel::Buffered(T) < Channel(T)
     raise_if_closed
 
     @queue << value
-    Crystal::Scheduler.enqueue @receivers
-    @receivers.clear
-
+    if receiver = @receivers.shift?
+      Crystal::Scheduler.enqueue receiver
+    end
     self
   end
 
-  private def receive_impl
+  private def receive_impl(timeout = nil)
+    add_timeout_event(timeout) if timeout && empty?
+
     while empty?
       yield if @closed
+      yield if @timed_out
       @receivers << Fiber.current
       Crystal::Scheduler.reschedule
     end
 
     @queue.shift.tap do
+      cancel_timeout_event
       Crystal::Scheduler.enqueue @senders
       @senders.clear
     end
+  end
+
+  def cancel_timeout_event
+    Fiber.current.resume_event.delete
   end
 
   def full?
@@ -282,8 +315,15 @@ class Channel::Unbuffered(T) < Channel(T)
     end
   end
 
-  private def receive_impl
+  private def receive_impl(timeout = nil)
+    start_at : Time::Span? = nil
+    if !@has_value && timeout
+      start_at = Time.monotonic
+      Fiber.current.resume_event.add(timeout)
+    end
+
     until @has_value
+      yield if start_at && start_at + timeout > Time.monotonic
       yield if @closed
       @receivers << Fiber.current
       if sender = @senders.shift?
