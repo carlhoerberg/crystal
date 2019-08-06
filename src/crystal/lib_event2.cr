@@ -65,4 +65,21 @@ lib LibEvent2
   fun evdns_getaddrinfo(base : DnsBase, nodename : UInt8*, servname : UInt8*, hints : LibC::Addrinfo*, cb : DnsGetAddrinfoCallback, arg : Void*) : DnsGetAddrinfoRequest
   fun evdns_getaddrinfo_cancel(DnsGetAddrinfoRequest)
   fun evutil_freeaddrinfo(ai : LibC::Addrinfo*)
+
+  alias SizeT = LibC::SizeT
+  alias EvOffT = LibC::OffT
+  type Evbuffer = Void*
+  fun evbuffer_new : Evbuffer
+  fun evbuffer_free(buf : Evbuffer)
+  fun evbuffer_read(buf : Evbuffer, fd : EvutilSocketT, howmuch : Int) : Int
+  fun evbuffer_write(buf : Evbuffer, fd : EvutilSocketT) : Int
+  fun evbuffer_get_length(buf : Evbuffer) : SizeT
+  fun evbuffer_add(buf : Evbuffer, data : Void*, len : SizeT) : Int
+  fun evbuffer_expand(buf : Evbuffer, len : SizeT) : Int
+  fun evbuffer_add_file(buf : Evbuffer, fd : Int, offset : EvOffT, length : SizeT) : Int
+
+  type BufferedEvent = Void*
+  fun bufferevent_socket_new(base : EventBase, fd : EvutilSocketT, options  BufferedEventOptions) : BufferedEvent
+
+  fun bufferevent_setfd(bufev : BufferedEvent, fd : EvutilSocketT) : Int
 end
