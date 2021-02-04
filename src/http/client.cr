@@ -659,6 +659,9 @@ class HTTP::Client
   end
 
   private def send_request(request)
+    if body = request.body.as?(IO::Memory) && !request.content_length
+      request.content_length = body.size - body.pos
+    end
     decompress = set_defaults request
     run_before_request_callbacks(request)
     request.to_io(io)
