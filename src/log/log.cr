@@ -43,7 +43,7 @@ class Log
                                fatal:  Severity::Fatal,
                              } %}
     # Logs a message if the logger's current severity is lower or equal to `{{severity}}`.
-    def {{method.id}}(*, exception : Exception? = nil)
+    def {{method.id}}(*, exception : Exception? = nil) : Nil
       severity = Severity.new({{severity}})
       return unless level <= severity
 
