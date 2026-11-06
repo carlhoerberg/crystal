@@ -1,4 +1,5 @@
 require "./ip_socket"
+require "./happy_eyeballs"
 
 # A Transmission Control Protocol (TCP/IP) socket.
 #
@@ -27,6 +28,36 @@ class TCPSocket < IPSocket
     # You may limit the DNS resolution time with `dns_timeout` and limit the
     # connection time to the remote server with `connect_timeout`. Both values
     # should be `Time::Span`.
+    #
+    # When DNS returns multiple addresses, connection attempts alternate between
+    # address families and start 250 milliseconds apart (Happy Eyeballs). The
+    # first successful connection is returned and the other sockets are closed.
+    # `connect_timeout` applies separately to each connection attempt.
+    def self.new(host : String, port, dns_timeout : Time::Span? = nil, connect_timeout = nil, {% if compare_versions(Crystal::VERSION, "1.5.0") >= 0 %} @[Deprecated("Use Socket.set_blocking instead.")] {% end %} blocking = nil)
+      # Subclasses may initialize additional state in their host constructor.
+      {% if @type != TCPSocket %}
+        return super(host, port, dns_timeout, connect_timeout, blocking)
+      {% end %}
+
+      addresses = Addrinfo.tcp(host, port, timeout: dns_timeout)
+      if addresses.size == 1
+        return new(address: addresses.first, connect_timeout: connect_timeout, blocking: blocking)
+      end
+
+      HappyEyeballs.connect(addresses, connect_timeout) do |address|
+        new(af: address.family, type: address.type, protocol: address.protocol, blocking: blocking)
+      end
+    rescue error : Socket::ConnectError
+      raise Socket::ConnectError.from_os_error("Error connecting to '#{host}:#{port}'", error.os_error)
+    end
+
+    # :ditto:
+    @[Deprecated("Use `.new(String, _, Time::Span?)` instead.")]
+    def self.new(host : String, port, dns_timeout : Number, connect_timeout = nil, blocking = nil)
+      new(host, port, dns_timeout.seconds, connect_timeout, blocking)
+    end
+
+    # Retained for subclasses which delegate their initializer to this one.
     def initialize(host : String, port, dns_timeout : Time::Span? = nil, connect_timeout = nil, {% if compare_versions(Crystal::VERSION, "1.5.0") >= 0 %} @[Deprecated("Use Socket.set_blocking instead.")] {% end %} blocking = nil)
       Addrinfo.tcp(host, port, timeout: dns_timeout) do |addrinfo|
         super(af: addrinfo.family, type: addrinfo.type, protocol: addrinfo.protocol, blocking: blocking)
@@ -42,6 +73,16 @@ class TCPSocket < IPSocket
   @[Deprecated("Use `.new(String, _, Time::Span?)` instead.")]
   def initialize(host : String, port, dns_timeout : Number, connect_timeout = nil, blocking = nil)
     initialize(host, port, dns_timeout.seconds, connect_timeout, blocking: blocking)
+  end
+
+  private def initialize(*, address : Addrinfo, connect_timeout, blocking)
+    super(af: address.family, type: address.type, protocol: address.protocol, blocking: blocking)
+    begin
+      connect(address, timeout: connect_timeout)
+    rescue
+      close
+      raise
+    end
   end
 
   protected def initialize(family : Family, type : Type, protocol : Protocol = Protocol::IP)
